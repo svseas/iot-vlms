@@ -1,14 +1,16 @@
 """Seed database with real Vietnam lighthouse data."""
 
 import asyncio
-import sys
-from pathlib import Path
+import json
+import os
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import asyncpg
+import bcrypt
 
-from src.core.database import create_pool, close_pool
-from src.core.security import hash_password
+
+def hash_password(password: str) -> str:
+    """Hash a password."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 # Real Vietnam lighthouse data based on ibiblio.org and other sources
 LIGHTHOUSES = [
@@ -272,7 +274,7 @@ async def seed_stations(pool):
                 lh["name"],
                 lh["lat"],
                 lh["lng"],
-                lh["metadata"],
+                json.dumps(lh["metadata"]),
             )
             print(f"  Created station: {lh['code']} - {lh['name']}")
 
@@ -312,7 +314,7 @@ async def seed_devices(pool):
                     station["id"],
                     dtype,
                     model,
-                    {"name": dname},
+                    json.dumps({"name": dname}),
                 )
             print(f"  Created devices for station: {station['code']}")
 
@@ -323,7 +325,12 @@ async def main():
     print("VLMS Database Seeder")
     print("=" * 50)
 
-    pool = await create_pool()
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL environment variable is required")
+        return
+
+    pool = await asyncpg.create_pool(dsn=database_url, min_size=2, max_size=5)
 
     try:
         await seed_users(pool)
@@ -336,7 +343,7 @@ async def main():
         for user in USERS:
             print(f"  {user['email']} / {user['password']} ({user['role']})")
     finally:
-        await close_pool()
+        await pool.close()
 
 
 if __name__ == "__main__":
