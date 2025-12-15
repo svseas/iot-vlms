@@ -11,14 +11,11 @@ Generates realistic telemetry data for lighthouse stations including:
 import asyncio
 import random
 import math
+import os
 from datetime import datetime, timezone
 from uuid import UUID
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.core.database import create_pool, close_pool
+import asyncpg
 
 
 class LighthouseSimulator:
@@ -326,14 +323,19 @@ async def main():
     print("VLMS IoT Data Simulator")
     print("=" * 50)
 
-    pool = await create_pool()
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL environment variable is required")
+        return
+
+    pool = await asyncpg.create_pool(dsn=database_url, min_size=2, max_size=5)
 
     try:
         await run_simulation(pool, interval=30)
     except KeyboardInterrupt:
         print("\n\nSimulation stopped.")
     finally:
-        await close_pool()
+        await pool.close()
 
 
 if __name__ == "__main__":
