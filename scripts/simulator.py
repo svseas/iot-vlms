@@ -9,6 +9,7 @@ Generates realistic telemetry data for lighthouse stations including:
 """
 
 import asyncio
+import json
 import random
 import math
 import os
@@ -224,14 +225,21 @@ class LighthouseSimulator:
 async def generate_random_alerts(pool, stations: list[dict]):
     """Occasionally generate realistic alerts."""
     alert_scenarios = [
+        ("power_failure", "critical", "Critical: Battery failure", "Battery voltage dropped below 10.5V - immediate attention required"),
         ("power_failure", "high", "Low battery voltage detected", "Battery voltage dropped below 11.5V threshold"),
+        ("device_offline", "high", "Gateway offline", "Main gateway not responding for 10 minutes"),
         ("device_offline", "medium", "Weather station offline", "No data received for 15 minutes"),
-        ("anomaly", "low", "Unusual power consumption", "Power draw 20% higher than expected"),
+        ("anomaly", "medium", "Unusual power consumption", "Power draw 20% higher than expected"),
+        ("anomaly", "low", "Minor voltage fluctuation", "Input voltage showing irregular patterns"),
+        ("intrusion", "critical", "Security breach detected", "Multiple motion sensors triggered simultaneously"),
         ("intrusion", "high", "Motion detected", "Motion sensor triggered at restricted area"),
+        ("fire", "critical", "Fire alarm triggered", "Smoke detector activated in equipment room"),
+        ("maintenance_due", "medium", "Maintenance overdue", "Scheduled maintenance was due 5 days ago"),
         ("maintenance_due", "info", "Scheduled maintenance due", "Monthly inspection due in 3 days"),
     ]
 
-    if random.random() < 0.1:  # 10% chance per cycle
+    # 30% chance per cycle for demo purposes
+    if random.random() < 0.3:
         station = random.choice(stations)
         alert_type, severity, title, message = random.choice(alert_scenarios)
 
@@ -246,7 +254,7 @@ async def generate_random_alerts(pool, stations: list[dict]):
                 severity,
                 title,
                 message,
-                {"simulated": True, "timestamp": datetime.now(timezone.utc).isoformat()},
+                json.dumps({"simulated": True, "timestamp": datetime.now(timezone.utc).isoformat()}),
             )
             print(f"  Alert generated: [{severity.upper()}] {title} at {station['name']}")
 
