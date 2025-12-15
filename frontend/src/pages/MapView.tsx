@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Card, Typography, Spin, Tag, Drawer, Divider, Row, Col, Statistic, Tabs } from 'antd';
 import {
   ThunderboltOutlined,
