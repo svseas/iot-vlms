@@ -1,0 +1,24 @@
+# Simulator Dockerfile
+FROM python:3.12-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Copy application code
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+# Run the simulator
+CMD ["python", "scripts/simulator.py"]
