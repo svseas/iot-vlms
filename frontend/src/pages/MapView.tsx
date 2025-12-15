@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Card, Typography, Spin, Tag, Drawer, Divider, Row, Col, Statistic, Tabs } from 'antd';
 import {
   ThunderboltOutlined,
@@ -6,16 +6,36 @@ import {
   EnvironmentOutlined,
 } from '@ant-design/icons';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import { Icon } from 'leaflet';
+import { Icon, DivIcon } from 'leaflet';
 import type { Marker as LeafletMarker } from 'leaflet';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { stationsApi } from '../services/stations';
 import { telemetryApi } from '../services/telemetry';
+import { alertsApi } from '../services/alerts';
 import { LineChartCard, AreaChartCard } from '../components/charts';
 import type { StationListItem, StationStatus, Station, TelemetryRecord, MetricItem } from '../types';
 import dayjs from 'dayjs';
 import 'leaflet/dist/leaflet.css';
+
+// CSS for flickering animation
+const flickerStyle = document.createElement('style');
+flickerStyle.textContent = `
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .lighthouse-critical {
+    animation: flicker 0.5s ease-in-out infinite;
+  }
+  .lighthouse-marker {
+    transition: transform 0.2s ease;
+  }
+  .lighthouse-marker:hover {
+    transform: scale(1.1);
+  }
+`;
+document.head.appendChild(flickerStyle);
 
 const { Title, Text } = Typography;
 
@@ -89,6 +109,50 @@ const activeIcon = new Icon({
   popupAnchor: [0, -48],
 });
 
+// Critical alert lighthouse SVG (red with warning glow)
+const criticalLighthouseSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48">
+  <defs>
+    <linearGradient id="towerCritical" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#dc3545"/>
+      <stop offset="50%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#dc3545"/>
+    </linearGradient>
+    <filter id="glowRed">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Warning glow circle -->
+  <circle cx="32" cy="32" r="30" fill="#dc3545" opacity="0.3" filter="url(#glowRed)"/>
+  <!-- Base -->
+  <rect x="16" y="54" width="32" height="8" rx="2" fill="#2c3e50"/>
+  <!-- Tower -->
+  <path d="M24 54 L20 54 L26 20 L38 20 L44 54 L40 54" fill="url(#towerCritical)" stroke="#dc3545" stroke-width="2"/>
+  <!-- Red stripes -->
+  <rect x="27" y="28" width="10" height="6" fill="#dc3545"/>
+  <rect x="25" y="40" width="14" height="6" fill="#dc3545"/>
+  <!-- Light house top -->
+  <rect x="26" y="14" width="12" height="6" fill="#2c3e50"/>
+  <rect x="24" y="12" width="16" height="4" fill="#dc3545"/>
+  <!-- Light beam - red warning -->
+  <ellipse cx="32" cy="10" rx="12" ry="6" fill="#dc3545" filter="url(#glowRed)"/>
+  <!-- Dome -->
+  <path d="M28 12 Q32 6 36 12" fill="#dc3545" stroke="#a71d2a" stroke-width="1"/>
+  <!-- Warning icon -->
+  <text x="32" y="48" font-size="14" fill="#fff" text-anchor="middle" font-weight="bold">!</text>
+</svg>`;
+
+const createCriticalIcon = () => new DivIcon({
+  html: `<div class="lighthouse-marker lighthouse-critical">${criticalLighthouseSvg}</div>`,
+  iconSize: [48, 48],
+  iconAnchor: [24, 48],
+  popupAnchor: [0, -48],
+  className: '',
+});
+
 const statusColors: Record<StationStatus, string> = {
   active: 'green',
   inactive: 'red',
@@ -99,11 +163,12 @@ const statusColors: Record<StationStatus, string> = {
 interface HoverMarkerProps {
   station: StationListItem;
   isSelected: boolean;
+  hasCriticalAlert: boolean;
   onSelect: (station: StationListItem) => void;
   t: (key: string) => string;
 }
 
-const HoverMarker: React.FC<HoverMarkerProps> = ({ station, isSelected, onSelect, t }) => {
+const HoverMarker: React.FC<HoverMarkerProps> = ({ station, isSelected, hasCriticalAlert, onSelect, t }) => {
   const markerRef = useRef<LeafletMarker>(null);
 
   const eventHandlers = useMemo(
@@ -121,11 +186,18 @@ const HoverMarker: React.FC<HoverMarkerProps> = ({ station, isSelected, onSelect
     [station, onSelect]
   );
 
+  // Determine which icon to use
+  const getIcon = () => {
+    if (hasCriticalAlert) return createCriticalIcon();
+    if (isSelected) return activeIcon;
+    return defaultIcon;
+  };
+
   return (
     <Marker
       ref={markerRef}
       position={[station.location.lat, station.location.lng]}
-      icon={isSelected ? activeIcon : defaultIcon}
+      icon={getIcon()}
       eventHandlers={eventHandlers}
     >
       <Popup>
@@ -399,6 +471,19 @@ const MapView: React.FC = () => {
     queryFn: () => stationsApi.list({ limit: 100 }),
   });
 
+  // Fetch unresolved critical alerts
+  const { data: criticalAlerts } = useQuery({
+    queryKey: ['alerts', 'critical', 'unresolved'],
+    queryFn: () => alertsApi.list({ severity: 'critical', resolved: false, limit: 100 }),
+    refetchInterval: 10000, // Refresh every 10 seconds
+  });
+
+  // Get set of station IDs with critical alerts
+  const stationsWithCriticalAlerts = useMemo(() => {
+    const alertList = criticalAlerts?.data || [];
+    return new Set(alertList.map(alert => alert.station_id));
+  }, [criticalAlerts]);
+
   const { data: stationDetail } = useQuery({
     queryKey: ['station', selectedStation?.id],
     queryFn: () => stationsApi.get(selectedStation!.id),
@@ -480,6 +565,7 @@ const MapView: React.FC = () => {
                 key={station.id}
                 station={station}
                 isSelected={selectedStation?.id === station.id}
+                hasCriticalAlert={stationsWithCriticalAlerts.has(station.id)}
                 onSelect={handleSelectStation}
                 t={t}
               />
