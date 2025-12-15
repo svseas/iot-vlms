@@ -10,6 +10,12 @@ router = APIRouter(tags=["Health"])
 logger = logging.getLogger(__name__)
 
 
+@router.get("/ping")
+async def ping():
+    """Simple liveness check - no dependencies."""
+    return {"status": "ok"}
+
+
 @router.get("/health")
 async def health_check():
     """Check application health."""
