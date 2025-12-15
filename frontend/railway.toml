@@ -1,6 +1,6 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "Dockerfile.frontend"
 
 [build.args]
 VITE_API_URL = "https://iot-vlms-production.up.railway.app/api/v1"
